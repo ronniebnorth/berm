@@ -7,3 +7,6 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# Private working files (not for public repo)
+private-docs/

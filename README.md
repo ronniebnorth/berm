@@ -157,6 +157,14 @@ The firmware, PCB design files, and bill of materials are not currently in this 
 
 Until then, this README serves as architectural documentation. The intent is that someone skilled in embedded systems, EEG signal processing, or music technology can read this document and form an accurate picture of how BERM is implemented at the architectural and signal-processing level, even without seeing the source.
 
+## License
+
+BERM is released under the Creative Commons Attribution-ShareAlike 4.0 International License (CC BY-SA 4.0).
+
+You are free to use, modify, and distribute this work, including for commercial purposes, provided that you (1) credit the original author, and (2) release derivative works under the same license. Full license text is in the [LICENSE](./LICENSE) file. Human-readable summary at https://creativecommons.org/licenses/by-sa/4.0/.
+
+Copyright (c) 2026 Ronnie North.
+
 ## Author
 
 Ronnie North.
