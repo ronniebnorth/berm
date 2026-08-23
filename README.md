@@ -4,6 +4,17 @@
 
 BERM is a real-time embedded biofeedback-to-MIDI bridge for live music performance. A performer wears an EEG headband; an ESP32-based device reads the headband over Bluetooth Low Energy, computes per-band activity in real time, and emits MIDI Continuous Controller messages to a Digital Audio Workstation. Inside the DAW, those messages modulate effect parameters applied to the performer's own live audio. The performer's brain state shapes their own sound, in a closed loop, with no host-side software in the path.
 
+## What's in this repo
+
+**[`bridge/`](./bridge) — BERM Bridge.** Free, open source, MIT. Optional
+software that lets your own programs read the same live EEG your rig is
+running on, while BERM Base keeps driving it. See
+[`bridge/README.md`](./bridge/README.md) to install and run it.
+
+The rest of this file is architectural documentation of the hardware and
+firmware. Hardware sales and the current product line are at
+**[berm.live](https://berm.live)**.
+
 ## Why BERM exists
 
 There is an established lineage of brain-computer music interfaces, going back to academic work by Eduardo Miranda and others, and including commercial precedent like WaveRider in the 1990s. Most of these systems share an architecture: physiological data drives a software process running on a host computer, which generates or controls music in some way.
@@ -159,9 +170,24 @@ Until then, this README serves as architectural documentation. The intent is tha
 
 ## License
 
-BERM is released under the Creative Commons Attribution-ShareAlike 4.0 International License (CC BY-SA 4.0).
+Two licenses, because code and documentation want different things from one.
 
-You are free to use, modify, and distribute this work, including for commercial purposes, provided that you (1) credit the original author, and (2) release derivative works under the same license. Full license text is in the [LICENSE](./LICENSE) file. Human-readable summary at https://creativecommons.org/licenses/by-sa/4.0/.
+**Code — MIT.** Everything in [`bridge/`](./bridge). Use it, modify it, ship it
+in a commercial product, no permission needed and no obligation to open your
+own work. Full text in [LICENSE-MIT.txt](./LICENSE-MIT.txt).
+
+This is deliberate. Creative Commons themselves advise against CC licenses for
+software — they say nothing useful about linking, derivative works, or patents,
+and that ambiguity alone is enough to stop someone building on it. If you want
+to make something with BERM Bridge, MIT means you can, without asking.
+
+**Documentation, hardware designs, and written material — CC BY-SA 4.0.**
+Including this README. Credit the original author and release derivative works
+under the same license. Full text in
+[LICENSE-CC-BY-SA-4.0.txt](./LICENSE-CC-BY-SA-4.0.txt), summary at
+https://creativecommons.org/licenses/by-sa/4.0/.
+
+[LICENSE](./LICENSE) states which applies to what.
 
 Copyright (c) 2026 Ronnie North.
 
@@ -173,4 +199,4 @@ Contact: ronnienorth@gmail.com
 
 ---
 
-*Last updated: 2026-04-25*
+*Last updated: 2026-08-22*
