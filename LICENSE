@@ -1,16 +1,22 @@
 BERM is covered by two licences, because code and documentation want
 different things from a licence.
 
-  Code                    MIT            see LICENSE-MIT.txt
+  Code                    GPL-3.0        see LICENSE-GPL-3.0.txt
   Documentation,          CC BY-SA 4.0   see LICENSE-CC-BY-SA-4.0.txt
   hardware designs,
   and written material
 
-MIT on the code is deliberate. Creative Commons themselves advise against
-using CC licences for software: they say nothing useful about linking,
-derivative works, or patents, and that ambiguity is enough to make a
-developer walk away. If you want to build something on BERM Bridge —
-commercial, open, a game, a research tool, anything — MIT means you can,
-without asking.
+Both are share-alike, which is the point: credit the original author, and
+release derivative works under the same licence. GPL-3.0 is the software
+equivalent of CC BY-SA — Creative Commons themselves point to it for code,
+because CC licences say nothing useful about linking, derivative works, or
+patents.
 
-Everything in bridge/ is MIT. The README and any docs are CC BY-SA 4.0.
+Share-alike here costs a builder almost nothing. BERM Bridge is a separate
+process with an HTTP API, so nobody links it into their program — they talk
+to it over localhost. If you are writing a game, a visualizer, a patch, or a
+commercial product that READS from Bridge, the GPL does not reach your code
+at all. It binds only someone who modifies Bridge itself and redistributes
+it, and then only to share those modifications back.
+
+Everything in bridge/ is GPL-3.0. The README and any docs are CC BY-SA 4.0.

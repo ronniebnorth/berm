@@ -19,7 +19,21 @@ Wire protocol:
     num_samples u16 BE | payload float32 LE [num_samples x num_channels]
     sample-interleaved: s0_ch0, s0_ch1, ..., s1_ch0, s1_ch1, ...
 
-MIT licensed — see ../LICENSE-MIT.txt. Build what you like on it.
+Copyright (C) 2026 Ronnie B North / Northtron LLC
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version. See ../LICENSE-GPL-3.0.txt.
+
+It is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for details.
+
+Note that this is a separate process with an HTTP API. If your software
+READS from it over localhost, the GPL does not reach your code — write
+whatever you like, closed or open. It binds you only if you modify this
+file and redistribute it.
 """
 
 import argparse

@@ -103,7 +103,15 @@ Stuck? Email me: ronnienorth@gmail.com. I answer these myself.
 
 ## Licence
 
-MIT — see [`../LICENSE-MIT.txt`](../LICENSE-MIT.txt). Build whatever you want
-on it, commercial or not, without asking.
+GPL-3.0 — see [`../LICENSE-GPL-3.0.txt`](../LICENSE-GPL-3.0.txt).
+
+**If you're writing software that reads from Bridge, this doesn't affect you.**
+Bridge is a separate process with an HTTP API; you talk to it over localhost.
+Your game, visualizer, patch, or commercial product is your own, closed or
+open, and the GPL doesn't reach it.
+
+The licence binds you only if you modify Bridge itself and pass it on — then
+the changed version stays GPL, with source, credited. Improve it and everyone
+gets the improvement, which is the deal.
 
 If you make something with it I'd genuinely like to see it.

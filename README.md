@@ -6,7 +6,7 @@ BERM is a real-time embedded biofeedback-to-MIDI bridge for live music performan
 
 ## What's in this repo
 
-**[`bridge/`](./bridge) — BERM Bridge.** Free, open source, MIT. Optional
+**[`bridge/`](./bridge) — BERM Bridge.** Free, open source, GPL-3.0. Optional
 software that lets your own programs read the same live EEG your rig is
 running on, while BERM Base keeps driving it. See
 [`bridge/README.md`](./bridge/README.md) to install and run it.
@@ -172,14 +172,19 @@ Until then, this README serves as architectural documentation. The intent is tha
 
 Two licenses, because code and documentation want different things from one.
 
-**Code — MIT.** Everything in [`bridge/`](./bridge). Use it, modify it, ship it
-in a commercial product, no permission needed and no obligation to open your
-own work. Full text in [LICENSE-MIT.txt](./LICENSE-MIT.txt).
+**Code — GPL-3.0.** Everything in [`bridge/`](./bridge). Full text in
+[LICENSE-GPL-3.0.txt](./LICENSE-GPL-3.0.txt).
 
-This is deliberate. Creative Commons themselves advise against CC licenses for
-software — they say nothing useful about linking, derivative works, or patents,
-and that ambiguity alone is enough to stop someone building on it. If you want
-to make something with BERM Bridge, MIT means you can, without asking.
+Share-alike, deliberately: credit the original author, and release derivative
+works under the same license. GPL-3.0 is the software equivalent of CC BY-SA —
+Creative Commons themselves point to it for code, because CC licenses say
+nothing useful about linking, derivative works, or patents.
+
+It asks very little of anyone building *with* BERM. Bridge is a separate
+process with an HTTP API, so nobody links it into their program — they talk to
+it over localhost. If your software reads from Bridge, the GPL doesn't reach
+your code at all. It binds only someone who modifies Bridge itself and
+redistributes it, and then only to pass the improvement on.
 
 **Documentation, hardware designs, and written material — CC BY-SA 4.0.**
 Including this README. Credit the original author and release derivative works
