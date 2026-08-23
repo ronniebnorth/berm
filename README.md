@@ -11,6 +11,10 @@ software that lets your own programs read the same live EEG your rig is
 running on, while BERM Base keeps driving it. See
 [`bridge/README.md`](./bridge/README.md) to install and run it.
 
+**[`session-logs/`](./session-logs) — session log decoder.** GPL-3.0, no
+dependencies. Turns the recordings BERM Base makes into readable summaries or
+CSV, so months of your own brain data are yours to analyse.
+
 The rest of this file is architectural documentation of the hardware and
 firmware. Hardware sales and the current product line are at
 **[berm.live](https://berm.live)**.
