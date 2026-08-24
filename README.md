@@ -51,7 +51,9 @@ The performer wears a Bluetooth EEG headband. The BERM device subscribes to the 
 
 ## Hardware
 
-The device is built around an ESP32-S3 module providing both BLE central and native USB. The user-facing controls are four detented rotary encoders with integrated push switches, a 128 by 64 pixel OLED display for live state and configuration, two indicator LEDs (power and a tri-color status indicator), and three jacks on the back panel: 5-pin DIN MIDI for hardware MIDI gear, and two 1/4 inch TRS jacks for an expression pedal and a footswitch input. USB-C carries USB-MIDI and power.
+The device is built around an ESP32-S3 module providing both BLE central and native USB. The user-facing controls are four detented rotary encoders with integrated push switches, a 128 by 64 pixel OLED display for live state and configuration, two indicator LEDs (power and a tri-color status indicator), and four jacks on the back panel: 5-pin DIN MIDI for hardware MIDI gear, a 3.5 mm TRS MIDI output wired to the MMA Type A standard for modern compact gear that takes MIDI on a minijack, and two 1/4 inch TRS jacks for an expression pedal and a footswitch input. A panel-mounted USB Type B connector carries USB-MIDI and power; Type B rather than USB-C because the connector and its cables survive being on a floor.
+
+MIDI therefore leaves the device on three connectors carrying two electrical streams: USB-MIDI, and a buffered hardware MIDI signal presented on both the 5-pin DIN and the 3.5 mm TRS jack. The two hardware connectors are the same signal on different plugs, so a receiver takes whichever it has an input for.
 
 Form factor is a small desk unit, roughly 130 by 90 by 35 mm in the current revision, in a non-conductive enclosure (3D-printed PETG in the prototype). The non-conductive choice is deliberate: BERM runs three concurrent 2.4 GHz radios (BLE central for the headband, WiFi access point for the web panel, ESP-NOW reserved for sensor expansion), and a metal case would attenuate all three.
 
