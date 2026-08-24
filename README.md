@@ -166,13 +166,46 @@ The closest functional analog is witheFlow (Dervakos et al., 2025), an EEG-and-E
 
 ## Status
 
-A working prototype exists and is in active use for the author's own practice and performance. Firmware is stable enough for everyday session use. The hardware is in its second PCB revision. The project is at the personal-validation stage of a staged commercialization plan; broader release will follow after a closed cohort of additional users has validated the design under varied conditions.
+<!-- LAUNCH-DAY EDIT: replace the "Not yet on sale" paragraph below with the
+     on-sale one, and drop this comment. Everything else in this section is
+     already true and stays as-is. -->
+
+**Not yet on sale.** Three units — BERM Base, Body and Bright — are built,
+working, and in daily use for the author's own practice and performance.
+Firmware is stable enough for everyday session use and updates over the air.
+The hardware is in its second PCB revision, in 3D-printed enclosures.
+
+A small first release is being prepared at **[berm.live](https://berm.live)**,
+hand-built and shipped by the author through Northtron LLC. The full user
+manuals for all three units are already there, free to read, along with the
+pricing and pre-order terms. There is an email list on that page if you want to
+know when it opens.
+
+BERM Base reads a Muse S (Gen 2) or a FlowTime headband, which you supply — a
+first-party headband, BERM Band, is in development and is not part of this
+release.
 
 ## Source code
 
-The firmware, PCB design files, and bill of materials are not currently in this repository. They will be released at a future point that will be announced here.
+**Available here now:**
 
-Until then, this README serves as architectural documentation. The intent is that someone skilled in embedded systems, EEG signal processing, or music technology can read this document and form an accurate picture of how BERM is implemented at the architectural and signal-processing level, even without seeing the source.
+- **[`bridge/`](./bridge)** — BERM Bridge, so your own software can read the
+  live EEG while the pedal is using it.
+- **[`session-logs/`](./session-logs)** — the decoder for the session
+  recordings BERM Base makes, to summaries or CSV.
+
+**Not here yet:** the device firmware, the enclosure CAD, and the KiCad
+projects. These are released against units sold rather than on a calendar,
+because what limits how much can be opened is how much support a one-person
+operation can absorb — not any desire to keep it secret. The order runs
+add-on templates and the ESP-NOW protocol first, then the Body and Bright
+firmware, then enclosure CAD, then Base firmware, then the board files.
+
+Until each lands, this README is the architectural documentation. The intent is
+that someone skilled in embedded systems, EEG signal processing, or music
+technology can read it and form an accurate picture of how BERM is implemented
+at the architectural and signal-processing level, even without seeing the
+source.
 
 ## License
 
