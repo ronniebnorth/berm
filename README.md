@@ -2,7 +2,11 @@
 
 **Biofeedback Expression Response Modulator**
 
-BERM is a real-time embedded biofeedback-to-MIDI bridge for live music performance. A performer wears an EEG headband; an ESP32-based device reads the headband over Bluetooth Low Energy, computes per-band activity in real time, and emits MIDI Continuous Controller messages to a Digital Audio Workstation. Inside the DAW, those messages modulate effect parameters applied to the performer's own live audio. The performer's brain state shapes their own sound, in a closed loop, with no host-side software in the path.
+BERM is a system of biofeedback instruments for live performance.
+
+A performer wears an EEG headband. **BERM Base**, a small ESP32-based unit, reads it over Bluetooth Low Energy and computes per-band brain activity in real time. Base is the hub, and it puts that signal out two ways at once: as MIDI Continuous Controllers to a DAW or hardware synth, and as a wireless broadcast of the computed features to purpose-built add-on devices that act on it directly. **BERM Body** is a full guitar effects chain modulated by that broadcast; **BERM Bright** drives DMX stage lighting from it. Both work with no computer present.
+
+Whichever path the signal takes, the loop closes in the same place: the performer's brain state shapes their own sound, and the sound shapes the state back.
 
 ## What's in this repo
 
@@ -25,11 +29,13 @@ There is an established lineage of brain-computer music interfaces, going back t
 
 BERM differs in two respects.
 
-First, the device is the system. All sensing, processing, and MIDI emission happen in firmware on a small ESP32-based unit. The DAW sees a standard MIDI controller. Earlier prototypes ran a Python bridge on a laptop in the signal path; that hop is gone.
+First, no computer is in the loop anywhere. Sensing, signal processing, and every output happen in firmware, across the devices themselves. A DAW is one optional destination rather than a requirement — a Base and a Body together make brain-driven guitar tone with nothing else in the room, and a Bright lights the room from the same signal. Earlier prototypes ran a Python bridge on a laptop in the signal path; that hop is gone, and it did not come back as the system grew.
+
+That is a stronger claim than it was when BERM was one box. Removing the host from a single device is a design choice; keeping it out while the system grows to a hub, an audio unit, and a lighting unit is an architecture — see [The add-on bus](#the-add-on-bus).
 
 Second, the output is continuous parameter modulation rather than preset switching. Each MIDI CC sweeps smoothly across its full range as the underlying brain-state feature changes. Reverb wet, filter cutoff, delay feedback, distortion drive, modulation depth, and any other DAW-modulatable parameter can be routed to a CC stream. This is finer-grained than systems that pre-configure several effects chains in a valence-arousal grid and crossfade between them. The performer hears their physiology shaping the texture of their own playing, not selecting between fixed presets.
 
-BERM is built for the performer's own audio loop: the music they are making, with effects driven by the state they are in while making it. Physiology to sound, sound back to physiology, recursive.
+BERM is built for the performer's own audio loop: the music they are making, with effects driven by the state they are in while making it. Physiology to sound, sound back to physiology, recursive. The lighting unit puts the same loop in the room, where an audience can see the state the player is in.
 
 ## System overview
 
@@ -64,15 +70,17 @@ The performer wears a Bluetooth EEG headband. BERM Base subscribes to the headba
 
 Configuration of which feature drives which CC is done on-device through an OLED-and-encoder interface, with optional setup through a self-hosted web panel. Every unit serves its own panel.
 
-## Hardware
+## BERM Base hardware
 
-The device is built around an ESP32-S3 module providing both BLE central and native USB. The user-facing controls are four detented rotary encoders with integrated push switches, a 128 by 64 pixel OLED display for live state and configuration, two indicator LEDs (power and a tri-color status indicator), and four jacks on the back panel: 5-pin DIN MIDI for hardware MIDI gear, a 3.5 mm TRS MIDI output wired to the MMA Type A standard for modern compact gear that takes MIDI on a minijack, and two 1/4 inch TRS jacks for an expression pedal and a footswitch input. A panel-mounted USB Type B connector carries USB-MIDI and power; Type B rather than USB-C because the connector and its cables survive being on a floor.
+This section and the several that follow describe **BERM Base**, the hub. Body and Bright are separate devices with their own enclosures and their own panels; what they share is the broadcast, covered under [The add-on bus](#the-add-on-bus).
+
+Base is built around an ESP32-S3 module providing both BLE central and native USB. The user-facing controls are four detented rotary encoders with integrated push switches, a 128 by 64 pixel OLED display for live state and configuration, two indicator LEDs (power and a tri-color status indicator), and four jacks on the back panel: 5-pin DIN MIDI for hardware MIDI gear, a 3.5 mm TRS MIDI output wired to the MMA Type A standard for modern compact gear that takes MIDI on a minijack, and two 1/4 inch TRS jacks for an expression pedal and a footswitch input. A panel-mounted USB Type B connector carries USB-MIDI and power; Type B rather than USB-C because the connector and its cables survive being on a floor.
 
 MIDI therefore leaves the device on three connectors carrying two electrical streams: USB-MIDI, and a buffered hardware MIDI signal presented on both the 5-pin DIN and the 3.5 mm TRS jack. The two hardware connectors are the same signal on different plugs, so a receiver takes whichever it has an input for.
 
-Form factor is a small desk unit, roughly 130 by 90 by 35 mm in the current revision, in a non-conductive enclosure (3D-printed PETG in the prototype). The non-conductive choice is deliberate: BERM runs three concurrent 2.4 GHz radios (BLE central for the headband, WiFi access point for the web panel, ESP-NOW for the add-on broadcast described below), and a metal case would attenuate all three.
+Form factor is a small desk unit, roughly 130 by 90 by 35 mm in the current revision, in a non-conductive enclosure (3D-printed PETG in the prototype). The non-conductive choice is deliberate: Base runs three concurrent 2.4 GHz radios (BLE central for the headband, WiFi access point for the web panel, ESP-NOW for the add-on broadcast described below), and a metal case would attenuate all three.
 
-## Signal flow on the device
+## Signal flow on BERM Base
 
 The processing pipeline runs at the EEG headband's sample rate, around 240 Hz per channel. Five stages, in order.
 
