@@ -34,20 +34,35 @@ BERM is built for the performer's own audio loop: the music they are making, wit
 ## System overview
 
 ```
-   ┌──────────────┐  BLE   ┌──────────────────────┐  USB-MIDI   ┌─────┐
-   │ EEG headband ├───────►│   BERM (ESP32-S3)    ├────────────►│ DAW │
-   └──────────────┘        │                      │             └──┬──┘
-                           │  sample → condition  │                │
-                           │  → shape → combine   │                ▼
-                           │  → emit              │            audio FX
-                           └──────────────────────┘                │
-                                                                   ▼
-                                                              performer
-                                                                   │
-                                                                   └──► loops back to brain state
+  ┌──────────────┐  BLE   ┌─────────────────────┐   MIDI    ┌─────┐
+  │ EEG headband ├───────►│   BERM Base (S3)    ├──────────►│ DAW │
+  └──────────────┘        │                     │ USB · DIN └──┬──┘
+                          │ sample → condition  │ · 3.5 mm     │
+                          │ → shape → combine   │              ▼
+                          │ → emit + broadcast  │          audio FX
+                          └──────────┬──────────┘              │
+                                     │ ESP-NOW                 │
+                         ┌───────────┴───────────┐             │
+                         ▼                       ▼             │
+                  ┌─────────────┐        ┌──────────────┐      │
+                  │ BERM Body   │        │ BERM Bright  │      │
+                  │ guitar FX   │        │ DMX lighting │      │
+                  └──────┬──────┘        └──────┬───────┘      │
+                         │                      │              │
+                         └──────────┬───────────┴──────────────┘
+                                    ▼
+                                performer
+                                    │
+                                    └──► loops back to brain state
 ```
 
-The performer wears a Bluetooth EEG headband. The BERM device subscribes to the headband's notification stream, runs the samples through a fixed-rate processing pipeline, and emits MIDI CC values over USB. Any DAW that accepts MIDI CC modulation (Bitwig Studio is the reference setup; Ableton, Logic, Reaper, FL Studio, others all work) can route those CCs to effect parameters. Configuration of which feature drives which CC is done on-device through an OLED-and-encoder interface, with optional setup through a self-hosted web panel.
+The performer wears a Bluetooth EEG headband. BERM Base subscribes to the headband's notification stream and runs the samples through a fixed-rate processing pipeline. The result leaves the device two ways at once.
+
+**As MIDI**, on USB, 5-pin DIN, and a 3.5 mm TRS jack. Any DAW that accepts MIDI CC modulation (Bitwig Studio is the reference setup; Ableton, Logic, Reaper, FL Studio, others all work) can route those CCs to effect parameters.
+
+**As an ESP-NOW broadcast** of the computed features, which purpose-built add-on devices receive directly. BERM Body is a full guitar effects chain modulated by it; BERM Bright drives DMX stage lighting from it. Neither needs a computer in the path — see [The add-on bus](#the-add-on-bus).
+
+Configuration of which feature drives which CC is done on-device through an OLED-and-encoder interface, with optional setup through a self-hosted web panel. Every unit serves its own panel.
 
 ## Hardware
 
@@ -55,7 +70,7 @@ The device is built around an ESP32-S3 module providing both BLE central and nat
 
 MIDI therefore leaves the device on three connectors carrying two electrical streams: USB-MIDI, and a buffered hardware MIDI signal presented on both the 5-pin DIN and the 3.5 mm TRS jack. The two hardware connectors are the same signal on different plugs, so a receiver takes whichever it has an input for.
 
-Form factor is a small desk unit, roughly 130 by 90 by 35 mm in the current revision, in a non-conductive enclosure (3D-printed PETG in the prototype). The non-conductive choice is deliberate: BERM runs three concurrent 2.4 GHz radios (BLE central for the headband, WiFi access point for the web panel, ESP-NOW reserved for sensor expansion), and a metal case would attenuate all three.
+Form factor is a small desk unit, roughly 130 by 90 by 35 mm in the current revision, in a non-conductive enclosure (3D-printed PETG in the prototype). The non-conductive choice is deliberate: BERM runs three concurrent 2.4 GHz radios (BLE central for the headband, WiFi access point for the web panel, ESP-NOW for the add-on broadcast described below), and a metal case would attenuate all three.
 
 ## Signal flow on the device
 
@@ -151,6 +166,89 @@ BERM emits on MIDI channel 1. The CC numbers used are configurable per channel; 
 - CC 6 (Expression, inverted) -> distortion drive — high Expression pulls drive down
 
 Inside the DAW, each CC is mapped to an effect parameter using the DAW's standard MIDI learn or modulator-binding mechanism. There is nothing BERM-specific about the DAW side; if the DAW can map a MIDI CC to a parameter, it can use BERM. Bitwig Studio is the reference setup, but Ableton Live, Logic Pro, Reaper, FL Studio, Cubase, and any modern DAW work identically.
+
+## The add-on bus
+
+BERM Base is not only a MIDI controller. Alongside the MIDI output it broadcasts
+its computed brain features over **ESP-NOW**, and a set of add-on devices listen.
+Two are built and in use: **BERM Body**, a full guitar effects chain whose
+parameters are modulated directly by the broadcast, and **BERM Bright**, which
+drives DMX-512 stage lighting from it. An earlier add-on, BERM Wah, was the
+prototype for the pattern.
+
+This is the part that makes BERM a system rather than a pedal, and it is
+deliberately the simplest part of the design.
+
+### One-way, by design
+
+The broadcast is **one-way**. Base sends; add-ons receive; nothing transmits
+back on that channel. There is no pairing, no handshake, no session, and no
+addressing — an add-on that is powered on and in range is subscribed, and one
+that isn't simply misses frames.
+
+That falls out of what the data is. Brain features are a continuous stream where
+the newest value supersedes the last, so a dropped frame is worth nothing 20 ms
+later and retransmitting it would be actively wrong. It also means the number of
+add-ons is free: Base's cost is identical whether nothing is listening or six
+things are.
+
+Add-ons do announce themselves to Base over HTTP so they appear in its web
+panel, but that is a convenience over WiFi and entirely separate. Losing it
+costs a line in a list, not the brain feed.
+
+### The frame
+
+A 64-byte packed struct at roughly 50 Hz. Magic `BRMF`, a protocol version, a
+frame counter for drop detection, a millisecond timestamp, and then the
+features as floats normalised to 0.0–1.0: the five band powers, Expression,
+two hemispheric balance channels, stillness, heart rate, total power, and a
+global "how much brain" master. Flags carry contact quality, live-versus-
+simulated, and whether data is flowing at all.
+
+Everything arrives **already computed**. An add-on does no DSP — it never sees
+a raw sample, never runs a filter, and needs no signal-processing code at all.
+That is what lets an add-on be a small microcontroller doing one job well, and
+it is why the whole protocol surface is a single header file.
+
+### Version tolerance
+
+The frame has grown four times — stillness, then two reshaped balance channels,
+then the global influence master — and older add-ons kept working across all of
+it, unmodified, without reflashing.
+
+The rule is that fields are only ever **appended**, and a receiver accepts any
+frame at or above a minimum version and at or above a minimum length. It copies
+what it understands and ignores trailing bytes it doesn't; fields a newer sender
+hasn't got stay zero. So a v3 add-on parses a v4 frame correctly, and a v4
+add-on parses a v3 frame correctly.
+
+For a one-person operation shipping hardware into people's homes, this matters
+more than elegance: it means a firmware update to the hub cannot brick a device
+sitting on somebody's pedalboard.
+
+### Where control lives
+
+One control crosses the bus: the global brain-influence master, which scales
+every brain-driven output across every device, so a single expression pedal
+eases the whole rig toward neutral.
+
+Everything else is deliberately **device-local**. Base's footswitch bypass
+neutralises the MIDI rig and does not touch the lights. Bright's blackout is
+Bright's own. An add-on that has lost the broadcast keeps working from its own
+hand-set values rather than going dark, because the brain half of its behaviour
+has no data and the rest never depended on any.
+
+That boundary is a design position, not an implementation detail: a bypass
+switch should do what its own panel says it does, and a device should not be
+useless because another device is switched off.
+
+### Building one
+
+The protocol is a single header. Include it, register an ESP-NOW receive
+callback, and read the fields — there is no library, no registration step, and
+nothing to negotiate. Three add-on templates exist (bare receiver, receiver with
+a web panel, and receiver with a web panel and an OLED); they are scheduled for
+release here along with the protocol header.
 
 ## Latency
 
