@@ -90,6 +90,57 @@ _filter_high     = _NOTCH_HZ_INIT + 2.0
 _filter_harmonic = True
 _notch_enabled   = True
 
+# ── Channel montage ──────────────────────────────────────────────────
+# Which electrodes feed the left/right analysis signals. BERM Base streams
+# all four Muse channels separately over the raw WebSocket, whatever montage
+# Base itself is using for its own DSP, so the choice here is independent:
+# you can watch TP9/TP10 in a browser while Base drives your rig from the
+# frontal pair.
+#
+#   frontal  — AF7 / AF8 alone. ~6-8 cm apart, on the forehead. Cleaner
+#              gamma, least EMG, least alpha.
+#   averaged — (AF7+TP9)/2 and (AF8+TP10)/2. Best alpha sensitivity, more
+#              EMG. Worst of the three for left/right comparison: averaging
+#              two sites emphasises what is common to them.
+#   temporal — TP9 / TP10 alone, behind the ears, ~15+ cm apart. The
+#              genuinely wide-spaced pair, and the one to use for
+#              interhemispheric work. Strongest alpha, most EMG-prone.
+#
+# Only offered when the stream actually carries the temporal channels — a
+# FlowTime headband is frontal-only hardware, so there is no choice to make
+# and /eeg reports no montage list at all.
+CHAN_FRONTAL  = "frontal"
+CHAN_AVERAGED = "averaged"
+CHAN_TEMPORAL = "temporal"
+CHAN_MODES    = (CHAN_FRONTAL, CHAN_AVERAGED, CHAN_TEMPORAL)
+
+# Integer spellings match museChanMode in the firmware, so a value read off
+# the Base panel can be passed straight in; "all" is what the UI calls the
+# four-channel average.
+CHAN_ALIASES = {
+    "0": CHAN_FRONTAL,  "frontal":  CHAN_FRONTAL,  "af": CHAN_FRONTAL,
+    "af7/af8": CHAN_FRONTAL,
+    "1": CHAN_AVERAGED, "averaged": CHAN_AVERAGED, "avg": CHAN_AVERAGED,
+    "all": CHAN_AVERAGED,
+    "2": CHAN_TEMPORAL, "temporal": CHAN_TEMPORAL, "tp": CHAN_TEMPORAL,
+    "tp9/tp10": CHAN_TEMPORAL,
+}
+
+
+def _parse_chan_mode(value):
+    """Normalise a montage name/int to one of CHAN_MODES, or None if unknown."""
+    if value is None:
+        return None
+    return CHAN_ALIASES.get(str(value).strip().lower())
+
+
+_chan_mode = _parse_chan_mode(os.environ.get("BERM_CHAN")) or CHAN_AVERAGED
+
+
+def _has_temporal() -> bool:
+    """True when the stream carries TP9/TP10 — i.e. a Muse, not a FlowTime."""
+    return bool(_state.channel_mask & 0x0C)
+
 
 def _build_notch_filters(fs: float) -> list:
     """cheby2 bandstop for fundamental + optional 2nd harmonic. Equiripple
@@ -297,27 +348,60 @@ def _add_cors_headers(resp):
     return resp
 
 
+def _hemi_buf(front: deque, temp: deque, temp_present: bool) -> np.ndarray:
+    """One hemisphere's analysis signal, per the selected montage.
+
+    FlowTime sends no temporal channel (the firmware reuses the AF7/AF8 slots
+    for its left/right raw channels), so with temp_present false this is always
+    the frontal buffer whatever the montage says.
+
+    A channel that is in the mask but silent falls back to the other one rather
+    than returning an empty array — a working hemisphere on the wrong electrode
+    beats a dead one. /eeg reports that substitution as chan_fallback so it
+    cannot pass for the montage you asked for."""
+    if not temp_present:
+        return np.array(list(front), dtype=np.float64)
+
+    f, t = list(front), list(temp)
+    if _chan_mode == CHAN_FRONTAL:
+        return np.array(f if f else t, dtype=np.float64)
+    if _chan_mode == CHAN_TEMPORAL:
+        return np.array(t if t else f, dtype=np.float64)
+
+    # averaged
+    if f and t:
+        n = min(len(f), len(t))
+        return (np.array(f[-n:], dtype=np.float64)
+                + np.array(t[-n:], dtype=np.float64)) * 0.5
+    return np.array(f or t, dtype=np.float64)
+
+
 def _left_buf() -> np.ndarray:
-    """Synthesize the proxy's left-hemisphere signal. Muse: average of AF7+TP9
-    (or AF7 alone if TP9 mask not present). FlowTime: AF7 alone (which is
-    actually the FlowTime left raw channel — the firmware reuses the slot)."""
-    if _state.channel_mask & (1 << 2):  # TP9 present
-        n = min(len(_state.af7), len(_state.tp9))
-        if n == 0: return np.array([], dtype=np.float64)
-        af7 = np.array(list(_state.af7)[-n:], dtype=np.float64)
-        tp9 = np.array(list(_state.tp9)[-n:], dtype=np.float64)
-        return (af7 + tp9) * 0.5
-    return np.array(list(_state.af7), dtype=np.float64)
+    return _hemi_buf(_state.af7, _state.tp9, bool(_state.channel_mask & (1 << 2)))
 
 
 def _right_buf() -> np.ndarray:
-    if _state.channel_mask & (1 << 3):  # TP10 present
-        n = min(len(_state.af8), len(_state.tp10))
-        if n == 0: return np.array([], dtype=np.float64)
-        af8  = np.array(list(_state.af8)[-n:],  dtype=np.float64)
-        tp10 = np.array(list(_state.tp10)[-n:], dtype=np.float64)
-        return (af8 + tp10) * 0.5
-    return np.array(list(_state.af8), dtype=np.float64)
+    return _hemi_buf(_state.af8, _state.tp10, bool(_state.channel_mask & (1 << 3)))
+
+
+def _chan_payload() -> dict:
+    """Montage fields for the JSON endpoints. Emits no montage list at all when
+    the stream has no temporal channels, which is how the UIs know to hide the
+    selector on a FlowTime."""
+    if not _has_temporal():
+        return {}
+    need = {
+        CHAN_FRONTAL:  (_state.af7, _state.af8),
+        CHAN_TEMPORAL: (_state.tp9, _state.tp10),
+        CHAN_AVERAGED: (_state.af7, _state.af8, _state.tp9, _state.tp10),
+    }[_chan_mode]
+    return {
+        "chan_mode":     _chan_mode,
+        "chan_modes":    list(CHAN_MODES),
+        "chan_fallback": _state.connected and any(len(b) == 0 for b in need),
+        "chan_counts":   {"af7":  len(_state.af7),  "af8":  len(_state.af8),
+                          "tp9":  len(_state.tp9),  "tp10": len(_state.tp10)},
+    }
 
 
 def _compute_derived(bands: dict) -> dict:
@@ -374,6 +458,7 @@ def eeg():
         "filter_high":     _filter_high,
         "filter_harmonic": _filter_harmonic,
     }
+    payload.update(_chan_payload())
     if bp:
         payload["bands"] = {
             b: {
@@ -445,7 +530,8 @@ def peaks():
 
     return jsonify({"ok": True, "peaks": peak_freqs, "edges": edge_freqs,
                     "samples": len(left),
-                    "freq_resolution_hz": round(fs / nperseg, 3)})
+                    "freq_resolution_hz": round(fs / nperseg, 3),
+                    **_chan_payload()})
 
 
 # ── /spectrum — per-bin Welch PSD per hemisphere for the heatmap and
@@ -512,7 +598,8 @@ def spectrum():
 
     return jsonify({"ok": True, "bins": bins, "fs": fs,
                     "freq_resolution_hz": round(fs / nperseg, 3),
-                    "samples": len(left)})
+                    "samples": len(left),
+                    **_chan_payload()})
 
 
 @app.route("/notch", methods=["POST"])
@@ -542,6 +629,41 @@ def set_notch():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/channels", methods=["GET", "POST"])
+def channels():
+    """Get or set the channel montage.
+
+    GET  -> {"ok": true, "chan_mode": "averaged", "chan_modes": [...]}
+    POST {"mode": "frontal" | "averaged" | "temporal"}
+
+    Also accepts the firmware's integer spellings (0/1/2) and "all" for
+    averaged. Takes effect on the next request: every channel is buffered
+    continuously, so switching costs nothing and loses no data.
+
+    This is the bridge's own view of the stream. It does not change what
+    BERM Base is doing with the same samples — Base has its own montage
+    setting in its web panel."""
+    global _chan_mode
+    if request.method == "GET":
+        return jsonify({"ok": True, "chan_mode": _chan_mode,
+                        "chan_modes": list(CHAN_MODES) if _has_temporal() else [],
+                        "has_temporal": _has_temporal()})
+    try:
+        data = request.get_json(force=True) or {}
+        mode = _parse_chan_mode(data.get("mode", data.get("chan_mode")))
+        if mode is None:
+            return jsonify({"ok": False,
+                            "error": "unknown mode %r - use one of %s"
+                                     % (data.get("mode"), ", ".join(CHAN_MODES))}), 400
+        _chan_mode = mode
+        log.info("channel montage = %s", mode)
+        return jsonify({"ok": True, "chan_mode": _chan_mode,
+                        "chan_modes": list(CHAN_MODES) if _has_temporal() else [],
+                        "has_temporal": _has_temporal()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
 @app.route("/connect", methods=["POST"])
 def connect_noop():
     """In berm mode BERM Base owns the BLE connection. This endpoint is a
@@ -567,6 +689,8 @@ def state():
             "tp9":  len(_state.tp9),
             "tp10": len(_state.tp10),
         },
+        "chan_mode": _chan_mode,
+        "has_temporal": _has_temporal(),
     })
 
 
@@ -579,7 +703,16 @@ def main():
     p.add_argument("--host", default="0.0.0.0", help="REST bind address (default: 0.0.0.0)")
     p.add_argument("--port", "-p", type=int, default=8520,
                    help="REST port (default: 8520)")
+    p.add_argument("--channels", "-c", default=None,
+                   choices=list(CHAN_MODES) + ["all"],
+                   help="initial channel montage (default: averaged, or the "
+                        "BERM_CHAN env var). Changeable at runtime from the "
+                        "EEG-Tones / Mirror / Heatmap pages, or POST /channels.")
     args = p.parse_args()
+
+    global _chan_mode
+    if args.channels:
+        _chan_mode = _parse_chan_mode(args.channels) or _chan_mode
 
     _state.berm_host = args.berm_host
     _state.berm_ws_port = args.berm_ws_port
