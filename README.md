@@ -287,7 +287,7 @@ manuals for all three units are already there, free to read, along with the
 pricing and pre-order terms. There is an email list on that page if you want to
 know when it opens.
 
-BERM Base reads a Muse S (Gen 2) or a FlowTime headband, which you supply — a
+BERM Base reads a Muse 2, a FlowTime or a Muse S (Gen 2) headband, which you supply — a
 first-party headband, BERM Band, is in development and is not part of this
 release.
 
