@@ -211,7 +211,91 @@ def compute_band_powers(left: np.ndarray, right: np.ndarray, fs: float, filters:
     result["total_power_left"]  = float(np.sqrt(lt)) if lt > 0 else 0.0
     result["total_power_right"] = float(np.sqrt(rt)) if rt > 0 else 0.0
     result["total_power"]       = (result["total_power_left"] + result["total_power_right"]) / 2.0
+
+    # Amplitude relative to this person's own slow baseline. 1.0 = ordinary
+    # for them, 2.0 = twice their usual.
+    #
+    # This exists because neither number above answers "is my alpha actually
+    # strong right now". The percentage is a SHARE, so it rises whenever the
+    # other bands go quiet, and the absolute value is in device units that
+    # differ between headbands and between people, so it has no fixed meaning
+    # to map a tone onto.
+    #
+    # Two traps, both learned the hard way in the firmware on 2026-09-09 and
+    # avoided here (docs/vintage-eeg/coherence-gate-analysis-2026-09-09.md):
+    #   - seed from a settled WINDOW, never one instant. Seeding early catches
+    #     electrodes still settling, which lands the baseline far too high; in
+    #     simulation that put resting at 0.34 and made a genuine doubling of
+    #     alpha read as 1.03, i.e. "ordinary".
+    #   - report nothing until the window is done, rather than a number that
+    #     is wrong for the first minutes.
+    _baseline.update(result)
+    for b in BAND_DEFS:
+        if f"{b}_abs" in result:
+            result[f"{b}_rel"] = _baseline.relative(b, result[f"{b}_abs"])
+    result["baseline_ready"] = _baseline.ready
+    result["baseline_progress"] = _baseline.progress()
     return result
+
+
+class _AmplitudeBaseline:
+    """Per-band slow reference for the *_rel figures.
+
+    Fed once per analysis pass (about 4 Hz), not per sample, so the constants
+    are in passes rather than seconds and shift a little if the poll rate
+    changes. Deliberately coarse: this is a baseline, not a measurement.
+    """
+    SEED_START = 60      # ~15 s in: past electrode settling
+    SEED_END   = 180     # ~45 s in: 30 s of averaging behind it
+    TAU        = 720     # ~3 min, matching the firmware's reference
+
+    def __init__(self):
+        self.n = 0
+        self.seed: dict = {}
+        self.slow: dict = {}
+        self.ready = False
+
+    def progress(self) -> float:
+        if self.ready:
+            return 1.0
+        return max(0.0, min(1.0, (self.n - self.SEED_START) / (self.SEED_END - self.SEED_START)))
+
+    def reset(self):
+        self.__init__()
+        log.info("amplitude baseline reset; ~45 s to re-establish")
+
+    def update(self, bp: dict):
+        self.n += 1
+        if self.n < self.SEED_START:
+            return
+        if not self.ready:
+            k = self.n - self.SEED_START + 1
+            for b in BAND_DEFS:
+                v = bp.get(f"{b}_abs")
+                if v is None:
+                    continue
+                self.seed[b] = self.seed.get(b, v) + (v - self.seed.get(b, v)) / k
+            if self.n >= self.SEED_END:
+                self.slow = dict(self.seed)
+                self.ready = True
+                log.info("amplitude baseline established: %s",
+                         ", ".join(f"{b} {v:.0f}" for b, v in sorted(self.slow.items())))
+            return
+        a = 1.0 / self.TAU
+        for b in BAND_DEFS:
+            v = bp.get(f"{b}_abs")
+            if v is not None and b in self.slow:
+                self.slow[b] += a * (v - self.slow[b])
+
+    def relative(self, band: str, value: float) -> float:
+        """-1 until the baseline exists, so callers can show nothing."""
+        base = self.slow.get(band, 0.0)
+        if not self.ready or base <= 0:
+            return -1.0
+        return value / base
+
+
+_baseline = _AmplitudeBaseline()
 
 
 # ── Shared bridge state ─────────────────────────────────────────────
@@ -282,6 +366,9 @@ def _dispatch_frame(frame: dict):
         global _filters
         _filters = _build_filters(_state.fs)
         log.info("sample rate updated → %.1f Hz; filters rebuilt", _state.fs)
+        # Different headband, or at least different filters: the old baseline
+        # describes a signal that no longer exists.
+        _baseline.reset()
     if frame["channel_mask"] != _state.channel_mask:
         _state.channel_mask = frame["channel_mask"]
         log.info("channel mask = 0x%02X", _state.channel_mask)
@@ -474,8 +561,12 @@ def eeg():
                 "left_pct":  bp[f"{b}_left_pct"],
                 "right_pct": bp[f"{b}_right_pct"],
                 "abs_power": bp[f"{b}_abs"],
+                # amplitude against this person's own baseline; -1 = not yet
+                "rel":       bp.get(f"{b}_rel", -1.0),
             } for b in BAND_DEFS if f"{b}_left_pct" in bp
         }
+        payload["baseline_ready"]    = bool(bp.get("baseline_ready", False))
+        payload["baseline_progress"] = float(bp.get("baseline_progress", 0.0))
         payload["derived"] = _compute_derived(bp)
         payload["total_power"] = bp["total_power"]
     return jsonify(payload)
