@@ -16,6 +16,10 @@ Enable RAW STREAM in BERM Base's web panel or no samples will arrive.
 Wire protocol:
     magic "BRMR" | version u8 | frame_id u32 BE | ts_ms u32 BE
     sample_rate u16 BE | num_channels u8 | channel_mask u8
+      version 1: sample_rate is whole hertz (FlowTime advertised 241,
+                 which is 0.2% off its real 241.5 and detunes any filter
+                 built from it)
+      version 2: sample_rate is HUNDREDTHS of a hertz (24150 = 241.5)
     num_samples u16 BE | payload float32 LE [num_samples x num_channels]
     sample-interleaved: s0_ch0, s0_ch1, ..., s1_ch0, s1_ch1, ...
 
@@ -249,7 +253,7 @@ def _parse_frame(buf: bytes):
     if len(buf) < HEADER_SIZE:
         return None
     magic, ver, fid, ts, sr, nch, mask, nsamp = struct.unpack(HEADER_FMT, buf[:HEADER_SIZE])
-    if magic != b"BRMR" or ver != 1:
+    if magic != b"BRMR" or ver not in (1, 2):
         log.warning("bad frame magic=%r ver=%d", magic, ver)
         return None
     payload = buf[HEADER_SIZE:]
@@ -260,14 +264,19 @@ def _parse_frame(buf: bytes):
     # Sample-interleaved float32 LE → np array shape (nsamp, nch)
     samples = np.frombuffer(payload, dtype="<f4").reshape(nsamp, nch)
     return {
-        "frame_id": fid, "ts_ms": ts, "sample_rate": sr,
+        # version 1 carried whole hertz here, version 2 carries hundredths.
+        "frame_id": fid, "ts_ms": ts,
+        "sample_rate": (sr / 100.0) if ver >= 2 else float(sr),
         "num_channels": nch, "channel_mask": mask, "samples": samples,
     }
 
 
 def _dispatch_frame(frame: dict):
     """Push samples into per-channel deques based on channel_mask."""
-    if frame["sample_rate"] and abs(frame["sample_rate"] - _state.fs) > 1.0:
+    # Tight, because the whole point of protocol 2 is a half-hertz
+    # correction: 241 -> 241.5. A 1.0 Hz deadband would swallow it and the
+    # filters would stay designed for the wrong rate.
+    if frame["sample_rate"] and abs(frame["sample_rate"] - _state.fs) > 0.05:
         _state.fs = float(frame["sample_rate"])
         _resize_buffers(_state.fs)
         global _filters
