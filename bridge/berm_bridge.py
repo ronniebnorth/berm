@@ -47,6 +47,7 @@ import os
 import struct
 import sys
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
@@ -307,7 +308,8 @@ class State:
     af8:  deque = field(default_factory=lambda: deque(maxlen=_max_samples(NOMINAL_SAMPLE_RATE)))
     tp9:  deque = field(default_factory=lambda: deque(maxlen=_max_samples(NOMINAL_SAMPLE_RATE)))
     tp10: deque = field(default_factory=lambda: deque(maxlen=_max_samples(NOMINAL_SAMPLE_RATE)))
-    connected: bool = False
+    connected: bool = False    # the WebSocket to Base is open (NOT the same as data arriving)
+    last_frame_t: float = 0.0  # time.monotonic() of the last frame, 0 = none yet
     last_frame_id: Optional[int] = None
     frames_received: int = 0
     samples_dropped: int = 0   # detected from gaps in frame_id
@@ -316,6 +318,23 @@ class State:
 
 
 _state = State()
+
+# Base keeps the WebSocket open with the headband off, so "connected" alone
+# says nothing about data: before this, the bridge went on reporting
+# "streaming" and serving its last frame for hours (2026-10-24, Chloe showed
+# "headband on" with the headband switched off). Live = a frame within
+# STALE_S. A gap longer than SPLICE_S empties the buffers, so samples from
+# before it are never joined to the ones after. Base's SIM mode sends frames
+# like a headband does, so it stays live.
+STALE_S, SPLICE_S = 3.0, 10.0
+
+
+def _streaming() -> bool:
+    return _state.connected and time.monotonic() - _state.last_frame_t < STALE_S
+
+
+def _no_data_error():
+    return jsonify({"ok": False, "error": "No headband data from BERM Base" if _state.connected else "Not connected to BERM Base"})
 _filters = _build_filters(NOMINAL_SAMPLE_RATE)
 
 
@@ -357,6 +376,13 @@ def _parse_frame(buf: bytes):
 
 def _dispatch_frame(frame: dict):
     """Push samples into per-channel deques based on channel_mask."""
+    now = time.monotonic()
+    if _state.last_frame_t and now - _state.last_frame_t > SPLICE_S:
+        for buf in (_state.af7, _state.af8, _state.tp9, _state.tp10):
+            buf.clear()
+        _state.last_frame_id = None   # the gap isn't dropped frames
+        log.info("data back after %.0f s: buffers cleared", now - _state.last_frame_t)
+    _state.last_frame_t = now
     # Tight, because the whole point of protocol 2 is a half-hertz
     # correction: 241 -> 241.5. A 1.0 Hz deadband would swallow it and the
     # filters would stay designed for the wrong rate.
@@ -494,7 +520,7 @@ def _chan_payload() -> dict:
     return {
         "chan_mode":     _chan_mode,
         "chan_modes":    list(CHAN_MODES),
-        "chan_fallback": _state.connected and any(len(b) == 0 for b in need),
+        "chan_fallback": _streaming() and any(len(b) == 0 for b in need),
         "chan_counts":   {"af7":  len(_state.af7),  "af8":  len(_state.af8),
                           "tp9":  len(_state.tp9),  "tp10": len(_state.tp10)},
     }
@@ -529,19 +555,19 @@ def _compute_derived(bands: dict) -> dict:
 
 @app.route("/eeg")
 def eeg():
-    left = _left_buf()
-    right = _right_buf()
-    bp = compute_band_powers(left, right, _state.fs, _filters)
+    live = _streaming()
+    bp = compute_band_powers(_left_buf(), _right_buf(), _state.fs, _filters) if live else None
     headband_kind = "muse" if (_state.channel_mask & 0x0C) else ("flowtime" if _state.channel_mask else "unknown")
     payload = {
         "ok": True,
-        "connected": _state.connected,
-        "contact_ok": _state.connected,
+        "connected": live,
+        "contact_ok": live,
+        "base_connected": _state.connected,
         "heart_rate": 0,
         "battery_pct": -1,
         "packet_count": _state.frames_received,
         "samples_dropped": _state.samples_dropped,
-        "status": "streaming" if _state.connected else "idle",
+        "status": "streaming" if live else ("no data" if _state.connected else "idle"),
         "bands": None,
         "derived": None,
         "source": "berm",
@@ -578,8 +604,8 @@ def eeg():
 # the runtime-variable sample rate. ─────────────────────────────────
 @app.route("/peaks")
 def peaks():
-    if not _state.connected:
-        return jsonify({"ok": False, "error": "Not connected to BERM Base"})
+    if not _streaming():
+        return _no_data_error()
     left, right = _left_buf(), _right_buf()
     fs = _state.fs
     if len(left) < int(fs * 3):
@@ -656,8 +682,8 @@ def _band_for_freq(f):
 
 @app.route("/spectrum")
 def spectrum():
-    if not _state.connected:
-        return jsonify({"ok": False, "error": "Not connected to BERM Base"})
+    if not _streaming():
+        return _no_data_error()
     left, right = _left_buf(), _right_buf()
     fs = _state.fs
     if len(left) < int(fs * 3):
@@ -779,6 +805,8 @@ def state():
         "berm_host": _state.berm_host,
         "berm_ws_port": _state.berm_ws_port,
         "connected": _state.connected,
+        "streaming": _streaming(),
+        "last_frame_age_s": round(time.monotonic() - _state.last_frame_t, 1) if _state.last_frame_t else None,
         "frames_received": _state.frames_received,
         "samples_dropped": _state.samples_dropped,
         "sample_rate": _state.fs,
